@@ -1,0 +1,1 @@
+- Added the query-contract skill to validate and structure drug-sourcing queries into a Query Contract.
