@@ -1,0 +1,1 @@
+- Added the acquisition-worker skill to execute one coverage cell via web search and return raw findings tagged to that cell.
