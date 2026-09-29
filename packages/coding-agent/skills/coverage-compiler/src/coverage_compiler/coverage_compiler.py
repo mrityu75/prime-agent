@@ -31,6 +31,19 @@ DEFAULT_REGIONS = [
     {"region": "CN", "language": "zh"},
 ]
 
+REGION_LANGUAGE_MAP = {
+    "US": ["en"],
+    "UK": ["en"],
+    "EU": ["en"],
+    "JP": ["ja"],
+    "CN": ["zh"],
+    "KR": ["ko"],
+    "DE": ["de", "en"],
+    "FR": ["fr", "en"],
+    "IN": ["en", "hi"],
+    "BR": ["pt", "en"],
+}
+
 
 @dataclass
 class CoverageCell:
@@ -41,13 +54,25 @@ class CoverageCell:
     entity_route: str
     as_of: str | None
     status: str = "pending"
+    note: str | None = None
 
 
 def _regions_from_contract(scope: dict[str, Any]) -> list[dict[str, str]]:
     geography = scope.get("geography") or []
     if not geography:
         return DEFAULT_REGIONS
-    return [{"region": g, "language": "en"} for g in geography]
+
+    result: list[dict[str, str]] = []
+    for g in geography:
+        languages = REGION_LANGUAGE_MAP.get(g)
+        if languages is None:
+            # Unmapped region: fall back to English but flag it explicitly
+            # rather than silently guessing, so a human can add the mapping.
+            result.append({"region": g, "language": "en", "note": "unmapped_region_defaulted_to_en"})
+        else:
+            for lang in languages:
+                result.append({"region": g, "language": lang})
+    return result
 
 
 def _sources_from_contract(access: dict[str, Any]) -> list[str]:
@@ -112,6 +137,7 @@ def compile_coverage(query_contract: dict[str, Any]) -> list[dict[str, Any]]:
                             query_family=family,
                             entity_route=route,
                             as_of=as_of,
+                            note=region_info.get("note"),
                         )
                     )
 

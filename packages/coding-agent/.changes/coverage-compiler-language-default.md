@@ -1,0 +1,1 @@
+- Fixed coverage-compiler assigning English to every explicit geography region; regions now map to their own languages, and unmapped regions are flagged.

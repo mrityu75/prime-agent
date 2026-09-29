@@ -15,7 +15,8 @@ follows new leads later.
 1. First get a validated query contract from the query-contract skill.
 2. Pass it to `coverage_compiler(query_contract=...)`. It returns a list of
    coverage cell dicts, each with: source, region, language, query_family,
-   entity_route, as_of, and status (always starts "pending").
+   entity_route, as_of, status (always starts "pending"), and note (None unless
+   the region was unmapped, see below).
 3. This is a pure cross-product generator, not a search planner -- it does not
    rank, order, or execute cells. A later layer (not built yet) tracks status
    as workers complete each cell.
@@ -27,6 +28,14 @@ This matches the project's recall-first design rule: retrieve broadly, exclude
 at admission, never at retrieval. A query like "regardless of asset owner
 domicile" is exactly the case this guards against -- do not assume US-only
 sourcing just because a criterion (e.g. "US FDA IND") mentions a US regulator.
+
+When scope.geography is set, each region is mapped to its search language(s)
+through a lookup table (US, UK, EU -> en; JP -> ja; CN -> zh; KR -> ko;
+DE -> de + en; FR -> fr + en; IN -> en + hi; BR -> pt + en). A region with
+several languages produces one region/language pair per language. A region that
+is not in the lookup falls back to English and its cells carry
+note="unmapped_region_defaulted_to_en", so the gap is visible and a human can
+add the mapping instead of the search silently running in the wrong language.
 
 ## Usage
 
