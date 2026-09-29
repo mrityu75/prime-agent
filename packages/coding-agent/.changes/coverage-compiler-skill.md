@@ -1,0 +1,1 @@
+- Added the coverage-compiler skill to compile a Query Contract into mandatory coverage cells.
