@@ -32,6 +32,15 @@ of the taxonomy.
    and error (None or a message). A failure here means the search itself
    failed -- log it as a failed lane per SPEC.md's design rules; never treat
    it as "no results exist".
+
+   Note: the websearch skill reports most failures as returned text, not as
+   exceptions (e.g. "Web search is not set up yet..." for a missing API key,
+   or "Error searching for '...'" for a failed HTTP request). acquisition-worker
+   checks the returned text against known failure signal strings
+   (`WEBSEARCH_FAILURE_SIGNALS`) and converts a match to status "failed", with
+   the text moved to `error` and `findings_text` set to None, instead of
+   trusting it as real findings. Add new signals to that list as they appear.
+
 4. Run cells in parallel via subagents for real throughput -- this skill
    itself does not parallelize; that's the caller's job (see SPEC.md's
    two-queue frontier and design rule #2: independent workers, not shared

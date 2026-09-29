@@ -1,0 +1,1 @@
+- Fixed acquisition-worker marking websearch failures reported as text (missing API key, failed request) as completed.

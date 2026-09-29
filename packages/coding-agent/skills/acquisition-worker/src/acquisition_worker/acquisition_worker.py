@@ -17,6 +17,15 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
+WEBSEARCH_FAILURE_SIGNALS = [
+    "Web search is not set up yet",
+    "Error searching for '",
+]
+
+
+def _is_websearch_failure(text: str) -> bool:
+    return any(signal in text for signal in WEBSEARCH_FAILURE_SIGNALS)
+
 
 def _build_search_query(cell: dict[str, Any], query_contract: dict[str, Any]) -> str:
     """Build a plain-text search query from a coverage cell and its query contract.
@@ -60,6 +69,9 @@ async def run(
         A dict: {"cell": <the input cell, unchanged>, "query": <search string
         used>, "findings_text": <raw formatted text from websearch>,
         "status": "completed" or "failed", "error": <str or None>}.
+        websearch reports failures as returned text, not exceptions, so text
+        matching WEBSEARCH_FAILURE_SIGNALS is returned as "failed" with the
+        text in "error" instead of being trusted as findings.
         This worker does not parse findings_text into structured records --
         that is a later, separate step (evidence-state layer), kept out of
         this worker so it stays a thin, single-purpose acquisition step.
@@ -93,6 +105,15 @@ async def run(
             "findings_text": None,
             "status": "failed",
             "error": f"acquisition_worker: websearch call failed: {e}",
+        }
+
+    if _is_websearch_failure(findings_text):
+        return {
+            "cell": cell,
+            "query": query,
+            "findings_text": None,
+            "status": "failed",
+            "error": findings_text,
         }
 
     return {
