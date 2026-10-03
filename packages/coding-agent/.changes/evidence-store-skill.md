@@ -1,0 +1,1 @@
+- Added the evidence-store skill to persist pipeline runs, coverage cells, and raw mentions to Supabase.
