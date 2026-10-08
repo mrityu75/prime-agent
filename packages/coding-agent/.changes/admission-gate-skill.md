@@ -1,0 +1,1 @@
+- Added the admission-gate skill to admit candidates deterministically from claims backed by stored evidence.
