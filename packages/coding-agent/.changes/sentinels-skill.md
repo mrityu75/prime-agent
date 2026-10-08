@@ -1,0 +1,1 @@
+- Added the sentinels skill for independent omission search beyond the mandatory coverage cells.
