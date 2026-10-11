@@ -27,14 +27,33 @@ def _is_websearch_failure(text: str) -> bool:
     return any(signal in text for signal in WEBSEARCH_FAILURE_SIGNALS)
 
 
+ROUTE_TERMS = {
+    "patents": "compounds patent application WO",
+    "literature": "discovery medicinal chemistry journal article",
+    "trial_registries": "clinical trial phase NCT",
+    "company_filings": "pipeline development candidate company press release",
+    "regulatory_filings": "IND clearance clinical trial application",
+    "conferences": "first-in-human abstract poster AACR ASCO ESMO",
+}
+
+ROUTE_REGION_HINTS = {
+    "patents": {"US": "US patent", "EU": "EP patent", "JP": "JP patent", "CN": "CN patent"},
+    "trial_registries": {"US": "ClinicalTrials.gov", "EU": "EU CTR EudraCT", "JP": "jRCT", "CN": "CTR China"},
+    "regulatory_filings": {"US": "FDA", "EU": "EMA", "JP": "PMDA", "CN": "NMPA"},
+}
+
+
 def _build_search_query(cell: dict[str, Any], query_contract: dict[str, Any]) -> str:
     """Build a plain-text search query from a coverage cell and its query contract.
 
-    Deliberately simple for the first worker: joins the query family (usually
-    the target/mechanism) with the entity route and region as search hints.
-    Refine per-route query construction later once real results show what
-    helps (e.g. patents likely need different query shaping than trial
-    registries) -- do not over-engineer this before seeing real output.
+    The query is shaped per entity route: the query family (usually the
+    target/mechanism) and modality, plus terms that match how that route's
+    sources are written (ROUTE_TERMS) and, where it helps, a source name for
+    the region (ROUTE_REGION_HINTS, e.g. jRCT for JP trial registries).
+    Other regions fall back to the region code. Unknown routes fall back to
+    the route name. The terms are generic per route and never derived from
+    gold data. Queries stay in English; cells with a non-English language are
+    not translated yet.
     """
     family = cell.get("query_family", "")
     route = cell.get("entity_route", "")
@@ -42,7 +61,9 @@ def _build_search_query(cell: dict[str, Any], query_contract: dict[str, Any]) ->
     modality = (query_contract.get("scope") or {}).get("modality") or []
     modality_str = " ".join(modality)
 
-    parts = [p for p in [family, modality_str, route.replace("_", " "), region] if p]
+    route_terms = ROUTE_TERMS.get(route, route.replace("_", " "))
+    region_hint = ROUTE_REGION_HINTS.get(route, {}).get(region, region)
+    parts = [p for p in [family, modality_str, route_terms, region_hint] if p]
     return " ".join(parts)
 
 

@@ -1,0 +1,1 @@
+- Fixed acquisition-worker using one generic search template for every coverage cell; queries are now shaped per entity route, with registry and regulator names per region.
