@@ -1,0 +1,1 @@
+- Fixed sentinels probing generic query words before gene symbols and codes named in the raw query.

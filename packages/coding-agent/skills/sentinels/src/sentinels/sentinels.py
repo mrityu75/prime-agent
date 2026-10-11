@@ -113,6 +113,16 @@ _GENERIC_TERMS = {
     "related", "relevant", "pathway", "pathways", "level", "broader", "close", "other", "global",
     "globally", "patients", "inactive", "registrational", "qualifying", "spanning", "across", "limited",
     "include", "exclude", "only", "based", "companies", "markets", "owned", "return", "identify",
+    "population", "approach", "approaches", "targeting", "target", "targets", "directed", "restriction",
+    "restricted", "geographic", "terminated", "shelved", "nontherapeutic", "tool", "natural", "products",
+    "diagnostics", "nonlead", "indications", "manifestation", "variants", "core", "primary", "least",
+    "filed", "reached", "antibody", "antibodies", "biologic", "biologics", "oligo", "oligos",
+    "oligonucleotide", "oligonucleotides", "sirna", "sirnas", "aso", "asos", "adc", "adcs", "peptide",
+    "peptides", "fda", "ind", "eu5", "programs", "program", "assets", "asset", "owner", "owners",
+    "molecular", "results", "through", "while", "that", "have", "been", "which", "these", "this",
+    "there", "their", "also", "more", "such", "each", "within", "without", "when", "where", "would",
+    "could", "should", "than", "then", "them", "they", "united", "states", "america", "japan", "china",
+    "korea", "europe", "european", "worldwide", "international", "cover", "limit", "same", "lead",
 }
 _GENERIC_STEMS = {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in _GENERIC_TERMS}
 
@@ -147,22 +157,33 @@ def _stem(word: str) -> str:
     return word[:-1] if len(word) > 4 and word.endswith("s") else word
 
 
+def _is_symbol(term: str) -> bool:
+    """Gene symbols and development codes: contains a digit, or two or more capitals (APOL1, VCP, PAMs)."""
+    return any(ch.isdigit() for ch in term) or sum(ch.isupper() for ch in term) >= 2
+
+
 def _term_priority(term: str) -> int:
-    """0 for distinctive terms, 1 for generic qualifiers (searched last)."""
-    return 1 if _stem(term) in _GENERIC_STEMS else 0
+    """0 for symbols/codes, 1 for other distinctive terms, 2 for generic qualifiers (searched last)."""
+    if _stem(term) in _GENERIC_STEMS:
+        return 2
+    return 0 if _is_symbol(term) else 1
 
 
 def _raw_query_terms(query_contract: dict[str, Any], cells: list[dict[str, Any]]) -> list[str]:
     """Raw-query terms no mandatory cell searches, most informative first.
 
-    Distinctive terms come before generic qualifiers (_GENERIC_TERMS); within
-    each group, longer terms come first, then query order.
+    Gene symbols and codes come first (APOL1, VCP, SLC1A2), then other
+    distinctive words, then generic qualifiers (_GENERIC_TERMS); within each
+    group, longer terms come first, then query order. Three-letter tokens are
+    kept only when they look like symbols.
     """
     raw = query_contract.get("raw_query") or ""
     covered = {_stem(w) for w in _mandatory_vocabulary(query_contract, cells)}
     seen: set[str] = set()
     terms: list[str] = []
-    for token in re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", raw):
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9]+", raw):
+        if len(token) < 4 and not (len(token) == 3 and _is_symbol(token)):
+            continue
         stem = _stem(token)
         if token.lower() in _STOPWORDS or stem in covered or stem in seen:
             continue
@@ -234,7 +255,8 @@ def plan_probes(
     if not targets:
         raise ValueError("sentinels: query_contract.scope.target_or_mechanism is empty")
 
-    modality = " ".join(scope.get("modality") or [])
+    modalities = scope.get("modality") or []
+    modality = modalities[0] if isinstance(modalities, list) and len(modalities) == 1 else ""
     used = _used_queries(mentions or [])
     covered = _covered_regions(cells)
     by_policy: dict[str, list[dict[str, Any]]] = {p: [] for p in POLICIES}

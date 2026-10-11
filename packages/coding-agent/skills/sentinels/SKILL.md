@@ -48,9 +48,12 @@ Call `sentinels(action=..., **kwargs)`:
    ("pending"). Probes are interleaved across policies so one policy cannot
    fill the budget; `raw_query_terms` gets two picks per round because the
    client's own terms are the strongest omission signal. Raw-query terms are
-   ranked most informative first: distinctive terms (e.g. "allosteric",
-   "trappers") before generic qualifiers (e.g. "selective", "inhibitor"),
-   longer before shorter. Pass a different `seed` per sweep to get fresh probes
+   ranked most informative first: gene symbols and codes (contain a digit,
+   or two or more capitals: "APOL1", "VCP", "SLC1A2"), then other distinctive
+   terms ("allosteric", "trappers"), then generic qualifiers ("selective",
+   "inhibitor", "population"), longer before shorter within each group.
+   Modality is added to probe queries only when the contract names exactly
+   one. Pass a different `seed` per sweep to get fresh probes
    (SPEC.md stopping criterion 3: "fresh sentinel policies").
 2. `action="execute_probe"` with `probe` and `websearch_fn=websearch`.
    Returns probe, findings_text, status ("completed" or "failed"), error.
