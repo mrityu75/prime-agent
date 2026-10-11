@@ -1,0 +1,1 @@
+- Fixed admission-gate not linking labels such as "Name (CODE)" to "CODE" in possible_same_as.

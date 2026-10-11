@@ -39,6 +39,7 @@ Getter = Callable[[str, dict[str, str]], Awaitable[list[dict[str, Any]]]]
 VERDICTS = {"met", "not_met", "unclear"}
 SCOPE_CRITERIA = ["target_or_mechanism", "modality", "indication", "stage", "geography", "sponsor_constraints"]
 CLAIM_FIELDS = ["candidate", "criterion", "verdict", "quote", "source_url"]
+MIN_KEY_LEN = 4
 
 _URL_RE = re.compile(r"^URL:\s*(\S+)", re.MULTILINE)
 
@@ -104,6 +105,35 @@ def _criteria_from_contract(query_contract: dict[str, Any]) -> tuple[list[str], 
     exclusions = list(scope.get("exclusions") or [])
     fields = list(evidence.get("required_output_fields") or [])
     return criteria, exclusions, fields
+
+
+def _label_keys(name: str) -> set[str]:
+    """Identity keys for a label and its parts: "Name (CODE-1, CODE 2)" gives name, CODE1, CODE2."""
+    parts = [name, *re.split(r"[(),;/]", name)]
+    return {k for k in (_identity_key(p) for p in parts) if len(k) >= MIN_KEY_LEN}
+
+
+def _possible_same_as(names: list[str]) -> list[list[str]]:
+    """Group labels that share any identity key. Reported as reversible links, never merged."""
+    parent = {n: n for n in names}
+
+    def find(n: str) -> str:
+        while parent[n] != n:
+            parent[n] = parent[parent[n]]
+            n = parent[n]
+        return n
+
+    owner: dict[str, str] = {}
+    for n in names:
+        for k in _label_keys(n):
+            if k in owner:
+                parent[find(n)] = find(owner[k])
+            else:
+                owner[k] = n
+    groups: dict[str, list[str]] = {}
+    for n in names:
+        groups.setdefault(find(n), []).append(n)
+    return sorted(sorted(g) for g in groups.values() if len(g) > 1)
 
 
 def _check_claim(
@@ -300,16 +330,12 @@ def evaluate(
         buckets[decision].append({"candidate": name, "decision": decision, "reasons": reasons,
                                 "criteria": per_criterion, "fields": field_values, "citations": citations})
 
-    groups: dict[str, set[str]] = {}
-    for claim in claims:
-        if claim.get("candidate"):
-            groups.setdefault(_identity_key(claim["candidate"]), set()).add(claim["candidate"].strip())
-    same_as = [sorted(g) for g in groups.values() if len(g) > 1]
+    same_as = _possible_same_as(sorted(names))
 
     return {
         **buckets,
         "unsupported_claims": unsupported,
-        "possible_same_as": sorted(same_as),
+        "possible_same_as": same_as,
         "coverage_report": _coverage_report(cells or [], mentions, buckets["admitted"]),
     }
 

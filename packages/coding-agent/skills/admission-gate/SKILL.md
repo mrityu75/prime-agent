@@ -66,7 +66,9 @@ scope.exclusions, output fields from evidence.required_output_fields.
   `candidates`: two or more missing (kept as leads). `rejected`: see above.
   Every candidate appears in exactly one bucket, with reasons and citations.
 - **No merges.** Names that differ only in punctuation or case (AZD5305 /
-  AZD-5305) are listed in `possible_same_as`. They are not merged.
+  AZD-5305), or labels that share a part ("saruparib (AZD5305)" / "AZD5305";
+  labels are split on parentheses, commas, semicolons, and slashes) are
+  listed in `possible_same_as`. They are not merged.
 - **Never "complete".** `coverage_report.status` is "incomplete" or
   "blocked" (all lanes failed). Stopping checks 1 and 5 are computed; 2-4 are
   "not_evaluated" because they need identity resolution, sentinel sweeps, and
