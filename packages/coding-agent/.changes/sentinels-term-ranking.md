@@ -1,0 +1,1 @@
+- Fixed sentinels spending its probe budget on generic raw-query terms; distinctive terms are now probed first and the raw-query policy gets two picks per round.

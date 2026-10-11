@@ -38,6 +38,11 @@ WEBSEARCH_FAILURE_SIGNALS = [
 
 POLICIES = ["raw_query_terms", "lexical_variants", "off_route_artifacts", "uncovered_regions"]
 
+# Picks per interleaving round. The client's own raw-query terms are the
+# strongest omission signal, so they get two picks per round. The total stays
+# bounded by max_probes.
+POLICY_WEIGHTS = {"raw_query_terms": 2, "lexical_variants": 1, "off_route_artifacts": 1, "uncovered_regions": 1}
+
 OFF_ROUTE_ARTIFACTS = [
     "poster abstract",
     "tech transfer licensing opportunity",
@@ -100,6 +105,17 @@ _STOPWORDS = {
     "active", "discontinued", "indication", "threshold",
 }
 
+_GENERIC_TERMS = {
+    "selective", "selectivity", "inhibitor", "inhibitors", "inhibition", "inhibit", "potent", "novel",
+    "compound", "compounds", "agent", "agents", "candidate", "candidates", "molecule", "molecules",
+    "small", "therapy", "therapies", "treatment", "clinical", "phase", "stage", "stages", "development",
+    "approved", "preclinical", "discovery", "modulator", "modulators", "direct", "indirect", "lead",
+    "related", "relevant", "pathway", "pathways", "level", "broader", "close", "other", "global",
+    "globally", "patients", "inactive", "registrational", "qualifying", "spanning", "across", "limited",
+    "include", "exclude", "only", "based", "companies", "markets", "owned", "return", "identify",
+}
+_GENERIC_STEMS = {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in _GENERIC_TERMS}
+
 _URL_RE = re.compile(r"^URL:\s*(\S+)", re.MULTILINE)
 _TITLE_URL_RE = re.compile(r"^Result \d+:\s*(.*)\nURL:\s*(\S+)", re.MULTILINE)
 
@@ -131,7 +147,17 @@ def _stem(word: str) -> str:
     return word[:-1] if len(word) > 4 and word.endswith("s") else word
 
 
+def _term_priority(term: str) -> int:
+    """0 for distinctive terms, 1 for generic qualifiers (searched last)."""
+    return 1 if _stem(term) in _GENERIC_STEMS else 0
+
+
 def _raw_query_terms(query_contract: dict[str, Any], cells: list[dict[str, Any]]) -> list[str]:
+    """Raw-query terms no mandatory cell searches, most informative first.
+
+    Distinctive terms come before generic qualifiers (_GENERIC_TERMS); within
+    each group, longer terms come first, then query order.
+    """
     raw = query_contract.get("raw_query") or ""
     covered = {_stem(w) for w in _mandatory_vocabulary(query_contract, cells)}
     seen: set[str] = set()
@@ -142,7 +168,8 @@ def _raw_query_terms(query_contract: dict[str, Any], cells: list[dict[str, Any]]
             continue
         seen.add(stem)
         terms.append(token)
-    return terms
+    order = {t: i for i, t in enumerate(terms)}
+    return sorted(terms, key=lambda t: (_term_priority(t), -len(t), order[t]))
 
 
 def _lexical_variants(target: str) -> list[str]:
@@ -212,7 +239,14 @@ def plan_probes(
     covered = _covered_regions(cells)
     by_policy: dict[str, list[dict[str, Any]]] = {p: [] for p in POLICIES}
 
-    def add(policy: str, query: str, rationale: str, region: str | None = None, language: str | None = None) -> None:
+    def add(
+        policy: str,
+        query: str,
+        rationale: str,
+        region: str | None = None,
+        language: str | None = None,
+        priority: int = 0,
+    ) -> None:
         query = " ".join(query.split())
         if query.lower() in used:
             return
@@ -227,12 +261,18 @@ def plan_probes(
                 "language": language,
                 "as_of": as_of,
                 "status": "pending",
+                "priority": priority,
             }
         )
 
     for target in targets:
         for term in _raw_query_terms(query_contract, cells):
-            add("raw_query_terms", f"{target} {term}", f"raw query term '{term}' is not searched by any mandatory cell")
+            add(
+                "raw_query_terms",
+                f"{target} {term}",
+                f"raw query term '{term}' is not searched by any mandatory cell",
+                priority=_term_priority(term),
+            )
         for variant in _lexical_variants(target):
             add("lexical_variants", f"{variant} {modality}", f"exact-code spelling {variant} of '{target}'")
         for artifact in OFF_ROUTE_ARTIFACTS:
@@ -250,14 +290,21 @@ def plan_probes(
 
     rng = random.Random(seed) if seed is not None else None
     if rng:
-        for probes in by_policy.values():
-            rng.shuffle(probes)
+        for policy, probes in by_policy.items():
+            if policy == "raw_query_terms":
+                tiers: dict[int, list[dict[str, Any]]] = {}
+                for p in probes:
+                    tiers.setdefault(p["priority"], []).append(p)
+                probes[:] = [p for t in sorted(tiers) for p in rng.sample(tiers[t], len(tiers[t]))]
+            else:
+                rng.shuffle(probes)
 
     planned: list[dict[str, Any]] = []
     while len(planned) < max_probes and any(by_policy.values()):
         for policy in POLICIES:
-            if by_policy[policy] and len(planned) < max_probes:
-                planned.append(by_policy[policy].pop(0))
+            for _ in range(POLICY_WEIGHTS[policy]):
+                if by_policy[policy] and len(planned) < max_probes:
+                    planned.append(by_policy[policy].pop(0))
     return planned
 
 
