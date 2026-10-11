@@ -122,7 +122,7 @@ _GENERIC_TERMS = {
     "molecular", "results", "through", "while", "that", "have", "been", "which", "these", "this",
     "there", "their", "also", "more", "such", "each", "within", "without", "when", "where", "would",
     "could", "should", "than", "then", "them", "they", "united", "states", "america", "japan", "china",
-    "korea", "europe", "european", "worldwide", "international", "cover", "limit", "same", "lead",
+    "korea", "europe", "european", "worldwide", "international", "cover", "limit", "same", "lead", "therapeutics", "therapeutic",
 }
 _GENERIC_STEMS = {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in _GENERIC_TERMS}
 
@@ -139,13 +139,15 @@ def _targets(query_contract: dict[str, Any]) -> list[str]:
 
 
 def _mandatory_vocabulary(query_contract: dict[str, Any], cells: list[dict[str, Any]]) -> set[str]:
+    """Words the mandatory queries actually search: each cell's query family, route, region,
+    and source, plus the modality when exactly one is named (multi-modality contracts leave
+    modality out of the queries). Other scope fields (indication, stage, exclusions, ...) are
+    not searched by any mandatory cell, so terms there are still sentinel candidates.
+    """
     words: set[str] = set()
-    scope = _scope(query_contract)
-    for value in scope.values():
-        items = value if isinstance(value, list) else [value]
-        for item in items:
-            if isinstance(item, str):
-                words.update(w.lower() for w in re.findall(r"[A-Za-z0-9]+", item))
+    modalities = _scope(query_contract).get("modality") or []
+    if isinstance(modalities, list) and len(modalities) == 1 and isinstance(modalities[0], str):
+        words.update(w.lower() for w in re.findall(r"[A-Za-z0-9]+", modalities[0]))
     for cell in cells:
         for key in ("query_family", "entity_route", "region", "source"):
             words.update(w.lower() for w in re.findall(r"[A-Za-z0-9]+", str(cell.get(key) or "")))

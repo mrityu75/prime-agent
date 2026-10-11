@@ -34,6 +34,10 @@ It works on in-memory lists in the same shapes evidence-store writes:
   `raw_mentions` rows (`query_used`, `findings_text`). Queries already run
   are not planned again, and URLs already in `findings_text` are not
   reported as new.
+- A raw-query term counts as already covered only if the mandatory queries
+  actually search it: a cell's query family, route, region, or source, or the
+  modality when exactly one is named. Terms the contract keeps in other scope
+  fields (indication, stage, exclusions, ...) are still probed.
 
 It does not read Supabase directly. evidence-store has no read actions yet,
 and the live schema is not confirmed.

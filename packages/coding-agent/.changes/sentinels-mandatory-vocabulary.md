@@ -1,0 +1,1 @@
+- Fixed sentinels skipping raw-query terms that the contract kept in scope fields the mandatory queries never search, such as indication or exclusions.
