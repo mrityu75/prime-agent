@@ -1,0 +1,1 @@
+- Added structured inference rules to the query contract (`semantics.inference_rules`) and fixed list fields such as modality being accepted as a plain string.

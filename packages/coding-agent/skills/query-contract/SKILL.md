@@ -19,7 +19,12 @@ gate, eval) consumes this contract's output.
      stage (list), geography (list), sponsor_constraints (text), exclusions (list),
      as_of_date (YYYY-MM-DD string)
    - **semantics**: counting_unit ("asset", "program", or "patent_family"),
-     inference_rules (text), ambiguity_policy ("include_and_flag" or "exclude",
+     inference_rules (list of {"id", "criterion", "statement"} dicts: an
+     explicit, documented rule that lets a stated fact satisfy a criterion,
+     e.g. {"id": "us_trial_implies_ind", "criterion": "active US FDA IND",
+     "statement": "An open or active interventional trial with US sites
+     implies an effective US IND (per 21 CFR 312.40)."}; admission-gate tags
+     rows that rely on one as verdict_basis "inferred"), ambiguity_policy ("include_and_flag" or "exclude",
      defaults to "include_and_flag" per the project's recall-first design rule),
      definitions (dict of term -> definition)
    - **evidence**: required_output_fields (list), acceptable_source_classes (list),

@@ -33,7 +33,7 @@ class Scope:
 @dataclass
 class Semantics:
     counting_unit: str = "asset"
-    inference_rules: str | None = None
+    inference_rules: list[dict[str, str]] = field(default_factory=list)
     ambiguity_policy: str = "include_and_flag"
     definitions: dict[str, str] = field(default_factory=dict)
 
@@ -70,6 +70,48 @@ def _check_fields(section: str, data: dict[str, Any], cls: type, errors: list[st
             errors.append(
                 f"{section}: unexpected field '{key}', valid fields are: {', '.join(valid)}"
             )
+
+
+INFERENCE_RULE_KEYS = ("id", "criterion", "statement")
+
+SCOPE_LIST_FIELDS = ("target_or_mechanism", "modality", "indication", "stage", "geography", "exclusions")
+EVIDENCE_LIST_FIELDS = ("required_output_fields", "acceptable_source_classes")
+ACCESS_LIST_FIELDS = ("public_sources", "licensed_sources", "subscriber_sources", "blocked_sources")
+
+
+def _check_str_list(name: str, value: Any, errors: list[str]) -> None:
+    if value is None:
+        return
+    if not isinstance(value, list):
+        errors.append(f"{name}: must be a list of strings, got {type(value).__name__} {value!r}")
+        return
+    bad = [v for v in value if not isinstance(v, str)]
+    if bad:
+        errors.append(f"{name}: every item must be a string, got {bad!r}")
+
+
+def _check_inference_rules(rules: Any, errors: list[str]) -> None:
+    if rules is None:
+        return
+    if not isinstance(rules, list):
+        errors.append("semantics.inference_rules: must be a list of {id, criterion, statement} dicts")
+        return
+    seen: set[str] = set()
+    for i, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            errors.append(f"semantics.inference_rules[{i}]: must be a dict")
+            continue
+        missing = [k for k in INFERENCE_RULE_KEYS if not isinstance(rule.get(k), str) or not rule[k].strip()]
+        extra = sorted(set(rule) - set(INFERENCE_RULE_KEYS))
+        if missing:
+            errors.append(f"semantics.inference_rules[{i}]: missing or empty {', '.join(missing)}")
+        if extra:
+            errors.append(f"semantics.inference_rules[{i}]: unexpected keys {', '.join(extra)}")
+        rule_id = rule.get("id")
+        if isinstance(rule_id, str) and rule_id in seen:
+            errors.append(f"semantics.inference_rules[{i}]: duplicate id '{rule_id}'")
+        if isinstance(rule_id, str):
+            seen.add(rule_id)
 
 
 def build_query_contract(
@@ -114,6 +156,14 @@ def build_query_contract(
     _check_fields("evidence", evidence, EvidenceRequirements, errors)
     _check_fields("access", access, AccessDeclaration, errors)
 
+    for section, data, names in (
+        ("scope", scope, SCOPE_LIST_FIELDS),
+        ("evidence", evidence, EVIDENCE_LIST_FIELDS),
+        ("access", access, ACCESS_LIST_FIELDS),
+    ):
+        for name in names:
+            _check_str_list(f"{section}.{name}", data.get(name), errors)
+
     if not scope.get("as_of_date"):
         errors.append("scope.as_of_date: required, got none")
     _parse_date(scope.get("as_of_date"), "scope.as_of_date", errors)
@@ -129,6 +179,8 @@ def build_query_contract(
         errors.append(
             f"semantics.ambiguity_policy: '{ambiguity_policy}' not in {sorted(VALID_AMBIGUITY_POLICIES)}"
         )
+
+    _check_inference_rules(semantics.get("inference_rules"), errors)
 
     _parse_date(evidence.get("source_cutoff"), "evidence.source_cutoff", errors)
 
