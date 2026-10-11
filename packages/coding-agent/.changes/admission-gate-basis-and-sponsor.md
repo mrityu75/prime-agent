@@ -1,0 +1,1 @@
+- Added inference-based admission to admission-gate, tagged as `verdict_basis` "inferred" or "stated", and changed sponsor-domicile checks to reject only when every known sponsor and originator is out of scope.

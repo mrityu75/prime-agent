@@ -41,6 +41,9 @@ One dict per (candidate, criterion) observation:
 | `source_url` | The URL the quote comes from |
 | `mention_id` | The raw_mentions id the quote is in (for snippet evidence) |
 | `value` | The field value, for required output fields (e.g. Sponsor) |
+| `basis` | `"stated"` (default): the quote states the fact. `"inferred"`: the quote states a premise of a declared inference rule |
+| `inference_rule` | For `basis="inferred"`: the `id` of a rule in the contract's `semantics.inference_rules` |
+| `party` | For sponsor/owner-domicile criteria: `"originator"`, `"current_owner"`, `"originator_and_current_owner"`, `"licensee"`, or `"sponsor"` |
 
 Criteria default to the non-empty scope fields of the query contract
 (target_or_mechanism, modality, indication, stage, geography,
@@ -65,6 +68,25 @@ scope.exclusions, output fields from evidence.required_output_fields.
   contradictions, conflicting field values, unclear, or snippet-only support.
   `candidates`: two or more missing (kept as leads). `rejected`: see above.
   Every candidate appears in exactly one bucket, with reasons and citations.
+- **Sponsor domicile is judged over the whole ownership history.** For
+  `sponsor_constraints` (or any criterion whose claims carry `party`), the
+  candidate is rejected only when every claim is "not_met" and the claims
+  cover both the originator and the current owner (or one
+  `originator_and_current_owner` claim). A mixed history (e.g. a US
+  originator acquired by a Swiss company), an unclear claim, or a not_met for
+  only one party goes to review with the per-party verdicts in
+  `criteria[...]["parties"]`.
+- **Inference is explicit and tagged.** An inferred claim counts only if its
+  rule is declared in `semantics.inference_rules`, the rule's criterion is
+  the claim's criterion, and the verdict is "met" (inference never rejects).
+  Its quote must pass the same support check. A criterion met by a stated
+  claim has `verdict_basis` "stated"; one met only through a rule has
+  "inferred" plus the rule ids. A row's `verdict_basis` is "inferred" if any
+  criterion is inferred (listed in `inferred_criteria`), else "stated".
+  Admitted rows of both kinds stay in `admitted`, and `admitted_by_basis`
+  counts them, so direct evidence and regulatory inference are never mixed
+  silently. A stated "not_met" against an inferred "met" is a contradiction
+  and goes to review.
 - **No merges.** Names that differ only in punctuation or case (AZD5305 /
   AZD-5305), or labels that share a part ("saruparib (AZD5305)" / "AZD5305";
   labels are split on parentheses, commas, semicolons, and slashes) are

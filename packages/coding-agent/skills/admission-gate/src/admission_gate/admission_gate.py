@@ -37,6 +37,8 @@ import httpx
 Getter = Callable[[str, dict[str, str]], Awaitable[list[dict[str, Any]]]]
 
 VERDICTS = {"met", "not_met", "unclear"}
+BASES = {"stated", "inferred"}
+SPONSOR_CRITERIA = {"sponsor_constraints"}
 SCOPE_CRITERIA = ["target_or_mechanism", "modality", "indication", "stage", "geography", "sponsor_constraints"]
 CLAIM_FIELDS = ["candidate", "criterion", "verdict", "quote", "source_url"]
 MIN_KEY_LEN = 4
@@ -140,6 +142,7 @@ def _check_claim(
     claim: dict[str, Any],
     mentions_by_id: dict[str, dict[str, Any]],
     documents: dict[str, str],
+    rules_by_id: dict[str, dict[str, str]],
 ) -> tuple[str | None, str | None]:
     """Return (support level, problem). Support level is "full_document", "snippet", or None."""
     missing = [f for f in CLAIM_FIELDS if not claim.get(f)]
@@ -147,6 +150,17 @@ def _check_claim(
         return None, f"missing claim fields: {', '.join(missing)}"
     if claim["verdict"] not in VERDICTS:
         return None, f"verdict '{claim['verdict']}' not in {sorted(VERDICTS)}"
+    basis = claim.get("basis", "stated")
+    if basis not in BASES:
+        return None, f"basis '{basis}' not in {sorted(BASES)}"
+    if basis == "inferred":
+        rule = rules_by_id.get(str(claim.get("inference_rule")))
+        if rule is None:
+            return None, f"inference_rule '{claim.get('inference_rule')}' is not declared in semantics.inference_rules"
+        if rule["criterion"] != claim["criterion"]:
+            return None, f"inference_rule '{rule['id']}' applies to criterion '{rule['criterion']}', not '{claim['criterion']}'"
+        if claim["verdict"] != "met":
+            return None, "an inferred claim can only support verdict 'met'"
     quote = _norm_text(claim["quote"])
     url = _norm_url(claim["source_url"])
 
@@ -246,15 +260,20 @@ def evaluate(
     policy = (query_contract.get("semantics") or {}).get("ambiguity_policy", "include_and_flag")
     mentions_by_id = {str(m.get("id")): m for m in mentions}
     documents = documents or {}
+    rules = (query_contract.get("semantics") or {}).get("inference_rules") or []
+    rules_by_id = {str(r["id"]): r for r in rules if isinstance(r, dict) and r.get("id") and r.get("criterion")}
+    ok_levels = {"full_document"} if full_required else {"full_document", "snippet"}
 
     supported: dict[str, list[dict[str, Any]]] = {}
     unsupported: list[dict[str, Any]] = []
     for claim in claims:
-        level, problem = _check_claim(claim, mentions_by_id, documents)
+        level, problem = _check_claim(claim, mentions_by_id, documents, rules_by_id)
         if level is None:
             unsupported.append({"claim": claim, "problem": problem})
             continue
-        supported.setdefault(claim["candidate"].strip(), []).append({**claim, "support": level})
+        supported.setdefault(claim["candidate"].strip(), []).append(
+            {**claim, "support": level, "basis": claim.get("basis", "stated")}
+        )
 
     buckets: dict[str, list[dict[str, Any]]] = {"admitted": [], "review": [], "candidates": [], "rejected": []}
     names = set(supported) | {c["candidate"].strip() for c in claims if isinstance(c.get("candidate"), str) and c["candidate"].strip()}
@@ -269,16 +288,47 @@ def evaluate(
         for criterion in criteria:
             cl = [r for r in rows if r["criterion"] == criterion]
             verdicts = {r["verdict"] for r in cl}
-            levels = {r["support"] for r in cl if r["verdict"] == "met"}
-            per_criterion[criterion] = {"verdicts": sorted(verdicts), "met_support": sorted(levels)}
-            if "met" in verdicts and "not_met" in verdicts:
+            met = [r for r in cl if r["verdict"] == "met"]
+            levels = {r["support"] for r in met}
+            stated_ok = any(r["basis"] == "stated" and r["support"] in ok_levels for r in met)
+            inferred = [r for r in met if r["basis"] == "inferred" and r["support"] in ok_levels]
+            basis = "stated" if stated_ok else ("inferred" if inferred else None)
+            per_criterion[criterion] = {
+                "verdicts": sorted(verdicts),
+                "met_support": sorted(levels),
+                "verdict_basis": basis,
+                "inference_rules": sorted({str(r["inference_rule"]) for r in inferred}) if basis == "inferred" else [],
+            }
+            if criterion in SPONSOR_CRITERIA or any(r.get("party") for r in cl):
+                parties = {str(r.get("party") or "unspecified") for r in cl}
+                per_criterion[criterion]["parties"] = {
+                    p: sorted({r["verdict"] for r in cl if str(r.get("party") or "unspecified") == p}) for p in sorted(parties)
+                }
+                all_out = bool(cl) and verdicts == {"not_met"}
+                covered = "originator_and_current_owner" in parties or {"originator", "current_owner"} <= parties
+                if not cl:
+                    missing += 1
+                    reasons.append(f"{criterion}: no supported claim")
+                elif all_out and covered:
+                    reject = True
+                    reasons.append(f"{criterion}: every known sponsor/originator is outside the allowed scope")
+                elif all_out:
+                    review = True
+                    reasons.append(f"{criterion}: not_met for {sorted(parties)} only; originator and current owner not both established")
+                elif verdicts != {"met"}:
+                    review = True
+                    reasons.append(f"{criterion}: sponsor history mixed or unclear {per_criterion[criterion]['parties']}")
+                elif basis is None:
+                    review = True
+                    reasons.append(f"{criterion}: met only in snippets; full document required")
+            elif "met" in verdicts and "not_met" in verdicts:
                 review = True
                 reasons.append(f"{criterion}: contradictory supported claims")
             elif "not_met" in verdicts:
                 reject = True
                 reasons.append(f"{criterion}: supported not_met")
             elif "met" in verdicts:
-                if full_required and "full_document" not in levels:
+                if basis is None:
                     review = True
                     reasons.append(f"{criterion}: met only in snippets; full document required")
             elif "unclear" in verdicts:
@@ -324,10 +374,19 @@ def evaluate(
 
         citations = sorted(
             ({"criterion": r["criterion"], "quote": r["quote"], "source_url": r["source_url"],
-              "mention_id": r.get("mention_id"), "support": r["support"]} for r in rows),
+              "mention_id": r.get("mention_id"), "support": r["support"], "basis": r["basis"],
+              "inference_rule": r.get("inference_rule") if r["basis"] == "inferred" else None} for r in rows),
             key=lambda c: (c["criterion"], c["source_url"], c["quote"]),
         )
-        buckets[decision].append({"candidate": name, "decision": decision, "reasons": reasons,
+        inferred_criteria = sorted(c for c, v in per_criterion.items() if v["verdict_basis"] == "inferred")
+        if inferred_criteria:
+            verdict_basis = "inferred"
+        elif any(v["verdict_basis"] == "stated" for v in per_criterion.values()):
+            verdict_basis = "stated"
+        else:
+            verdict_basis = None
+        buckets[decision].append({"candidate": name, "decision": decision, "verdict_basis": verdict_basis,
+                                "inferred_criteria": inferred_criteria, "reasons": reasons,
                                 "criteria": per_criterion, "fields": field_values, "citations": citations})
 
     same_as = _possible_same_as(sorted(names))
@@ -336,6 +395,10 @@ def evaluate(
         **buckets,
         "unsupported_claims": unsupported,
         "possible_same_as": same_as,
+        "admitted_by_basis": {
+            "stated": sum(r["verdict_basis"] == "stated" for r in buckets["admitted"]),
+            "inferred": sum(r["verdict_basis"] == "inferred" for r in buckets["admitted"]),
+        },
         "coverage_report": _coverage_report(cells or [], mentions, buckets["admitted"]),
     }
 
