@@ -51,15 +51,17 @@ def _build_search_query(cell: dict[str, Any], query_contract: dict[str, Any]) ->
     sources are written (ROUTE_TERMS) and, where it helps, a source name for
     the region (ROUTE_REGION_HINTS, e.g. jRCT for JP trial registries).
     Other regions fall back to the region code. Unknown routes fall back to
-    the route name. The terms are generic per route and never derived from
-    gold data. Queries stay in English; cells with a non-English language are
+    the route name. Modality is included only when the contract names exactly
+    one; with several, they are left to admission (design rule 5: retrieve
+    broadly, exclude at admission). The terms are generic per route and never
+    derived from gold data. Queries stay in English; cells with a non-English language are
     not translated yet.
     """
     family = cell.get("query_family", "")
     route = cell.get("entity_route", "")
     region = cell.get("region", "")
     modality = (query_contract.get("scope") or {}).get("modality") or []
-    modality_str = " ".join(modality)
+    modality_str = modality[0] if isinstance(modality, list) and len(modality) == 1 else ""
 
     route_terms = ROUTE_TERMS.get(route, route.replace("_", " "))
     region_hint = ROUTE_REGION_HINTS.get(route, {}).get(region, region)

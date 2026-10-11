@@ -1,0 +1,1 @@
+- Fixed acquisition-worker narrowing searches with every listed modality; modality is added only when the contract names exactly one.
