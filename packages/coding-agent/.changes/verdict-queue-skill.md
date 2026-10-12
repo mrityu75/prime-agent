@@ -1,0 +1,1 @@
+- Added the verdict-queue skill to run admission verdicts as resumable per-candidate model calls, with content-filter blocks recorded per candidate.
