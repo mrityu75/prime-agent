@@ -1,0 +1,1 @@
+- Added the lawful-fetch skill to read evidence documents through ClinicalTrials.gov, Europe PMC, NCBI E-utilities, Crossref, and Unpaywall before a plain GET, tagging results as full document or abstract.
