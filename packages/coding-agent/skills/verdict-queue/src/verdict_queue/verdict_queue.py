@@ -133,7 +133,9 @@ def _to_claims(raw: Any, names: list[str], packets: dict[str, list[dict[str, Any
     out: list[dict[str, Any]] = []
     bad = 0
     for c in raw.get("claims", []) if isinstance(raw, dict) else []:
-        n, i = c.get("candidate"), c.get("quote_index")
+        # With one candidate per unit the name is unambiguous; models sometimes rewrite long labels.
+        n = names[0] if len(names) == 1 else c.get("candidate")
+        i = c.get("quote_index")
         if n not in names or not isinstance(i, int) or not 0 <= i < len(packets[n]):
             bad += 1
             continue

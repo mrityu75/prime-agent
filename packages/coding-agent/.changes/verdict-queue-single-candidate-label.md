@@ -1,0 +1,1 @@
+- Fixed verdict-queue dropping claims when the model rewrote a long candidate label in single-candidate units.
