@@ -57,9 +57,13 @@ scope.exclusions, output fields from evidence.required_output_fields.
   appears in that mention, or the quote appears in `documents[source_url]`
   (full text you read). Other claims go to `unsupported_claims` with the
   problem.
-- **Snippets are leads.** If evidence.full_document_required is true (the
-  default), snippet-only support for any criterion or field sends the
-  candidate to review, never to admission.
+- **Support levels.** A supported quote is `full_document` (found in
+  `documents`), `abstract` (found in `abstracts`, e.g. a PubMed or Europe PMC
+  abstract when the full text is not openly available), or `snippet` (found
+  in a stored search result). If evidence.full_document_required is true (the
+  default), only `full_document` support admits; abstract- or snippet-only
+  support for any criterion or field sends the candidate to review, and the
+  reasons and `met_support` show which level was found.
 - **Absence is not rejection.** Only a supported "not_met", or a supported
   "met" on an exclusion, rejects. ambiguity_policy "exclude" also rejects
   "unclear"; "include_and_flag" (default) sends it to review.
@@ -113,6 +117,7 @@ result = await admission_gate(
     mentions=data["mentions"],
     cells=data["cells"],
     documents={},  # {source_url: full text} for documents you read
+    abstracts={},  # {source_url: abstract text} when only the abstract is available
 )
 print([r["candidate"] for r in result["admitted"]], result["coverage_report"]["status"])
 ```

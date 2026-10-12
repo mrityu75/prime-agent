@@ -143,8 +143,9 @@ def _check_claim(
     mentions_by_id: dict[str, dict[str, Any]],
     documents: dict[str, str],
     rules_by_id: dict[str, dict[str, str]],
+    abstracts: dict[str, str] | None = None,
 ) -> tuple[str | None, str | None]:
-    """Return (support level, problem). Support level is "full_document", "snippet", or None."""
+    """Return (support level, problem). Support level is "full_document", "abstract", "snippet", or None."""
     missing = [f for f in CLAIM_FIELDS if not claim.get(f)]
     if missing:
         return None, f"missing claim fields: {', '.join(missing)}"
@@ -167,10 +168,13 @@ def _check_claim(
     doc = {_norm_url(u): t for u, t in documents.items()}.get(url)
     if doc is not None and quote in _norm_text(doc):
         return "full_document", None
+    abstract = {_norm_url(u): t for u, t in (abstracts or {}).items()}.get(url)
+    if abstract is not None and quote in _norm_text(abstract):
+        return "abstract", None
 
     mention_id = claim.get("mention_id")
     if mention_id is None:
-        return None, "quote not found in a supplied document and no mention_id cited"
+        return None, "quote not found in a supplied document or abstract and no mention_id cited"
     mention = mentions_by_id.get(str(mention_id))
     if mention is None:
         return None, f"mention_id '{mention_id}' is not a stored raw mention"
@@ -228,6 +232,7 @@ def evaluate(
     cells: list[dict[str, Any]] | None = None,
     documents: dict[str, str] | None = None,
     criteria: list[str] | None = None,
+    abstracts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Decide admission for every candidate named in the claims.
 
@@ -245,6 +250,10 @@ def evaluate(
         cells: Coverage cells, for the coverage report.
         documents: Optional {source_url: full text} the agent read. A quote
             found here counts as full-document support.
+        abstracts: Optional {source_url: abstract text} (e.g. from PubMed or
+            Europe PMC when the full text is not openly available). A quote
+            found here is "abstract" support: stronger than a snippet, but it
+            does not satisfy full_document_required.
         criteria: Override the criteria derived from the contract.
 
     Returns:
@@ -262,12 +271,12 @@ def evaluate(
     documents = documents or {}
     rules = (query_contract.get("semantics") or {}).get("inference_rules") or []
     rules_by_id = {str(r["id"]): r for r in rules if isinstance(r, dict) and r.get("id") and r.get("criterion")}
-    ok_levels = {"full_document"} if full_required else {"full_document", "snippet"}
+    ok_levels = {"full_document"} if full_required else {"full_document", "abstract", "snippet"}
 
     supported: dict[str, list[dict[str, Any]]] = {}
     unsupported: list[dict[str, Any]] = []
     for claim in claims:
-        level, problem = _check_claim(claim, mentions_by_id, documents, rules_by_id)
+        level, problem = _check_claim(claim, mentions_by_id, documents, rules_by_id, abstracts)
         if level is None:
             unsupported.append({"claim": claim, "problem": problem})
             continue
@@ -320,7 +329,7 @@ def evaluate(
                     reasons.append(f"{criterion}: sponsor history mixed or unclear {per_criterion[criterion]['parties']}")
                 elif basis is None:
                     review = True
-                    reasons.append(f"{criterion}: met only in snippets; full document required")
+                    reasons.append(f"{criterion}: met only in {'/'.join(sorted(levels))}; full document required")
             elif "met" in verdicts and "not_met" in verdicts:
                 review = True
                 reasons.append(f"{criterion}: contradictory supported claims")
@@ -330,7 +339,7 @@ def evaluate(
             elif "met" in verdicts:
                 if basis is None:
                     review = True
-                    reasons.append(f"{criterion}: met only in snippets; full document required")
+                    reasons.append(f"{criterion}: met only in {'/'.join(sorted(levels))}; full document required")
             elif "unclear" in verdicts:
                 if policy == "exclude":
                     reject = True
@@ -361,7 +370,7 @@ def evaluate(
                 r["support"] == "full_document" for r in rows if r["criterion"] == f and r["verdict"] == "met"
             ):
                 review = True
-                reasons.append(f"field '{f}': value only in snippets; full document required")
+                reasons.append(f"field '{f}': value not in a full document; full document required")
 
         if reject:
             decision = "rejected"

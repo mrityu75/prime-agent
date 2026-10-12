@@ -1,0 +1,1 @@
+- Added an "abstract" support level to admission-gate; abstract-only evidence is reported separately and does not satisfy the full-document requirement.
