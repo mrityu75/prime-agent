@@ -66,8 +66,14 @@ Optional overrides (environment variables):
 
 ```bash
 export PRIME_AGENT_WEBSEARCH_TIMEOUT=45
-export PRIME_AGENT_WEBSEARCH_NUM_RESULTS=5
+export PRIME_AGENT_WEBSEARCH_NUM_RESULTS=10
+export PRIME_AGENT_WEBSEARCH_MIN_INTERVAL=1.0
+export PRIME_AGENT_WEBSEARCH_RETRY_DELAY=10
 ```
+
+Searches in one kernel are spaced at least `PRIME_AGENT_WEBSEARCH_MIN_INTERVAL`
+seconds apart, and a 429 rate-limit response is retried once after
+`PRIME_AGENT_WEBSEARCH_RETRY_DELAY` seconds.
 
 A `SERPER_API_KEY` in the environment, if set, takes precedence over the stored key.
 

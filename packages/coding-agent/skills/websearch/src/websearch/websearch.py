@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
 from pathlib import Path
 
 import httpx
@@ -15,6 +17,29 @@ def _env_int(name: str, default: int) -> int:
         return int(os.environ[name])
     except (KeyError, ValueError):
         return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a float from the environment, falling back to default on bad values."""
+    try:
+        return float(os.environ[name])
+    except (KeyError, ValueError):
+        return default
+
+
+_pace_lock = asyncio.Lock()
+_last_call = 0.0
+
+
+async def _pace() -> None:
+    """Keep at least PRIME_AGENT_WEBSEARCH_MIN_INTERVAL seconds between Serper calls in this process."""
+    global _last_call
+    interval = _env_float("PRIME_AGENT_WEBSEARCH_MIN_INTERVAL", 1.0)
+    async with _pace_lock:
+        wait = _last_call + interval - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_call = time.monotonic()
 
 
 def _agent_dir() -> Path:
@@ -53,7 +78,7 @@ def _resolve_config_value(value: str) -> str:
     return (os.environ.get(value) or value).strip()
 
 
-def _format_serper_results(data: dict, query: str, num_results: int = 5) -> str:
+def _format_serper_results(data: dict, query: str, num_results: int = 10) -> str:
     """Format a Serper API response into readable text."""
     sections: list[str] = []
 
@@ -106,23 +131,36 @@ def _format_serper_results(data: dict, query: str, num_results: int = 5) -> str:
     return "\n\n---\n\n".join(sections)
 
 
-async def _fetch_serper(query: str, api_key: str, timeout: int = 45, num_results: int = 5) -> str:
-    """Execute a single Serper API search."""
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                "https://google.serper.dev/search",
-                json={"q": query},
-                headers={
-                    "X-API-KEY": api_key,
-                    "Content-Type": "application/json",
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPStatusError as e:
-        body = e.response.text if e.response is not None else ""
-        raise RuntimeError(f"Serper search error ({e.response.status_code}): {body}") from e
+async def _fetch_serper(query: str, api_key: str, timeout: int = 45, num_results: int = 10) -> str:
+    """Execute a single Serper API search.
+
+    Calls are paced (see _pace). A 429 rate-limit response is retried once after
+    PRIME_AGENT_WEBSEARCH_RETRY_DELAY seconds (default 10); any other error, or a
+    second 429, is raised.
+    """
+    retry_delay = _env_float("PRIME_AGENT_WEBSEARCH_RETRY_DELAY", 10.0)
+    for attempt in range(2):
+        await _pace()
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    "https://google.serper.dev/search",
+                    json={"q": query},
+                    headers={
+                        "X-API-KEY": api_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            break
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status == 429 and attempt == 0:
+                await asyncio.sleep(retry_delay)
+                continue
+            body = e.response.text if e.response is not None else ""
+            raise RuntimeError(f"Serper search error ({status}): {body}") from e
 
     return _format_serper_results(data, query, num_results=num_results)
 
@@ -158,7 +196,7 @@ async def run(
     if timeout is None:
         timeout = _env_int("PRIME_AGENT_WEBSEARCH_TIMEOUT", 45)
     if num_results is None:
-        num_results = _env_int("PRIME_AGENT_WEBSEARCH_NUM_RESULTS", 5)
+        num_results = _env_int("PRIME_AGENT_WEBSEARCH_NUM_RESULTS", 10)
 
     try:
         result = await _fetch_serper(query, api_key, timeout=timeout, num_results=num_results)

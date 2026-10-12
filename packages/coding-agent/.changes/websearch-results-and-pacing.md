@@ -1,0 +1,1 @@
+- Changed websearch to return 10 organic results by default (same Serper cost), space searches at least 1 second apart, and retry once after a 429 rate-limit response.

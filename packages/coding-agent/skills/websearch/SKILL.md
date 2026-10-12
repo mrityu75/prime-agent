@@ -19,7 +19,9 @@ don't ask them to set environment variables.
 Optional overrides (environment variables):
 
 - `PRIME_AGENT_WEBSEARCH_TIMEOUT` - HTTP timeout in seconds (default 45).
-- `PRIME_AGENT_WEBSEARCH_NUM_RESULTS` - number of organic results to return (default 5).
+- `PRIME_AGENT_WEBSEARCH_NUM_RESULTS` - number of organic results to return (default 10; Serper returns 10 per query at the same cost).
+- `PRIME_AGENT_WEBSEARCH_MIN_INTERVAL` - minimum seconds between searches in one kernel (default 1.0).
+- `PRIME_AGENT_WEBSEARCH_RETRY_DELAY` - seconds to wait before retrying a search once after a 429 rate-limit response (default 10).
 
 ## Usage
 
