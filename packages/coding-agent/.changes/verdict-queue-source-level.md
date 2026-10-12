@@ -1,0 +1,1 @@
+- Changed verdict-queue to show each quote's source level and to cite several supporting quotes per criterion, full-document quotes first.

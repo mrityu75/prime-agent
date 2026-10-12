@@ -87,7 +87,8 @@ def build_queue(*, path: str, packets: dict[str, list[dict[str, Any]]], order: l
     Args:
         path: Queue file (JSONL). Must not exist yet.
         packets: candidate name -> evidence quotes (dicts with quote, url, mention_id, and optional about,
-            quote_names_candidate), e.g. the cheap-model extraction output.
+            quote_names_candidate, level = "full_document" | "abstract" | "snippet"), e.g. the cheap-model
+            extraction output.
         order: Optional priority order of candidate names; others follow in packet order.
 
     Returns:
@@ -109,7 +110,8 @@ def _prompt(spec: dict[str, Any], names: list[str], packets: dict[str, list[dict
     for n in names:
         lines.append(f"### CANDIDATE: {n}")
         for i, q in enumerate(packets[n]):
-            lines.append(f"[{i}] (about={q.get('about')}, names_candidate={q.get('quote_names_candidate')}) {q['quote']}")
+            level = f", source={q['level']}" if q.get("level") else ""
+            lines.append(f"[{i}] (about={q.get('about')}, names_candidate={q.get('quote_names_candidate')}{level}) {q['quote']}")
     rules = spec.get("inference_rules") or []
     rule_text = "\n".join(f'- id "{r["id"]}" for criterion "{r["criterion"]}": {r["statement"]}' for r in rules) or "- none"
     return f"""Raw query:
@@ -122,7 +124,7 @@ Declared inference rules (basis "inferred" with inference_rule id; verdict "met"
 {rule_text}
 Sponsor-domicile criterion "sponsor_constraints" (if listed): one claim per party with "party" = originator, current_owner, originator_and_current_owner, licensee, or sponsor.
 
-For each candidate write claims: one per criterion you have evidence for (verdict "met", "not_met", or "unclear", citing ONE quote by index), field claims with "value" when a quote supports it, and an exclusion claim only when a quote shows a match. Use quotes with names_candidate=false only if the quote clearly refers to this candidate. Judge strictly from the quote text; skip criteria with no relevant quote.
+For each candidate write claims: for each criterion you have evidence for, a verdict ("met", "not_met", or "unclear") citing one quote by index; when several quotes support the same verdict, write one claim per quote (up to 3), putting quotes with source=full_document first, because admission can require full-document support; field claims with "value" when a quote supports it, and an exclusion claim only when a quote shows a match. Use quotes with names_candidate=false only if the quote clearly refers to this candidate. Judge strictly from the quote text; skip criteria with no relevant quote.
 
 Return {{"claims": [{{"candidate": <name exactly as given>, "criterion": ..., "verdict": ..., "quote_index": <int>, "value": <fields only>, "basis": "stated"|"inferred", "inference_rule": <id or null>, "party": <or null>}}]}}.
 
